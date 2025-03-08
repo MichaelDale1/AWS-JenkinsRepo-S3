@@ -17,9 +17,9 @@ pipeline {
                 }
             }
         }
-        stage('Checkout Code') {
+        stage('Checkout GitHub Code') {
             steps {
-                git branch: 'main', url: 'https://github.com/aaron-dm-mcdonald/jenkins-ec2.git' 
+                git branch: 'main', url: 'https://github.com/MichaelDale1/AWS-JenkinsRepo-S3.git' 
             }
         }
         stage('Initialize Terraform') {
@@ -29,6 +29,15 @@ pipeline {
                 '''
             }
         }
+        
+        stage ('Validate Terraform') {
+            steps {
+                sh '''
+                terraform validate
+                '''
+            }
+        }
+
         stage('Plan Terraform') {
             steps {
                 withCredentials([[
@@ -43,6 +52,9 @@ pipeline {
                 }
             }
         }
+
+
+
         stage('Apply Terraform') {
             steps {
                 input message: "Approve Terraform Apply?", ok: "Deploy"
@@ -58,6 +70,29 @@ pipeline {
                 }
             }
         }
+        
+            
+
+        stages {
+        stage ("Docker Pull Dastardly from Burp Suite container image") {
+            steps {
+                sh 'docker pull public.ecr.aws/portswigger/dastardly:latest'
+            }
+        }
+        stage ("Docker run Dastardly from Burp Suite Scan") {
+            steps {
+                cleanWs()
+                sh '''
+                    docker run --user $(id -u) -v ${WORKSPACE}:${WORKSPACE}:rw \
+                    -e BURP_START_URL=https://ginandjuice.shop/ \
+                    -e BURP_REPORT_FILE_PATH=${WORKSPACE}/dastardly-report.xml \
+                    public.ecr.aws/portswigger/dastardly:latest
+                '''
+            }
+        }
+    }
+    
+        
         stage ('Destroy Terraform') {
             steps {
                 input message: "Do you want to destroy the infrastructure?", ok: "Destroy"
@@ -75,11 +110,18 @@ pipeline {
         }
     }
     post {
+        always {
+            junit testResults: 'dastardly-report.xml', skipPublishingChecks: true
+        }
         success {
             echo 'Terraform deployment completed successfully!'
         }
         failure {
             echo 'Terraform deployment failed!'
         }
+
     }
+
+    
 }
+
